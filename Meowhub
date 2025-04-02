@@ -1,0 +1,313 @@
+-- Anura Hub Auto Bounty Script
+-- Version: 1.0
+-- Author: [Your Name]
+-- Date: April 02, 2025
+-- Description: Advanced auto bounty script for Blox Fruits with anti-ban and multiple features
+
+-- Dịch vụ Roblox
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
+local VirtualInput = game:GetService("VirtualInputManager")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+
+-- Biến toàn cục
+local Anura = {
+    AutoBounty = true,
+    StartTime = tick(),
+    TargetPlayer = nil,
+    Bounty = 0,
+    Config = {
+        SafeZone = Vector3.new(0, 100, 0),
+        AttackDelay = 0.1,
+        SkillDelay = 0.05,
+        AntiBanInterval = math.random(1, 3),
+        MaxDistance = 50,
+        MinFPS = 20
+    },
+    Stats = {
+        FPS = 0,
+        Kills = 0,
+        DamageDealt = 0,
+        ChestsCollected = 0,
+        FruitsCollected = 0
+    },
+    Blacklist = {},
+    Whitelist = {},
+    Log = {}
+}
+
+-- Module tiện ích
+local Utils = {}
+function Utils:Distance(pos1, pos2)
+    return (pos1 - pos2).Magnitude
+end
+
+function Utils:Random(min, max)
+    return math.random(min, max)
+end
+
+function Utils:Log(message)
+    table.insert(Anura.Log, {Time = os.time(), Message = message})
+end
+
+-- Module hiển thị UI
+local UI = {}
+function UI:Init()
+    local screenGui = Instance.new("ScreenGui", Players.LocalPlayer:WaitForChild("PlayerGui"))
+    screenGui.Name = "AnuraHubUI"
+    
+    -- Tiêu đề
+    local title = Instance.new("TextLabel", screenGui)
+    title.Size = UDim2.new(0, 200, 0, 50)
+    title.Position = UDim2.new(0.5, -100, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Text = "Anura Hub"
+    title.TextColor3 = Color3.fromRGB(255, 0, 0)
+    title.TextSize = 30
+    title.Font = Enum.Font.SourceSansBold
+    
+    -- Tính năng
+    local feature = Instance.new("TextLabel", screenGui)
+    feature.Size = UDim2.new(0, 200, 0, 30)
+    feature.Position = UDim2.new(0.5, -100, 0, 60)
+    feature.BackgroundTransparency = 1
+    feature.Text = "Auto Bounty"
+    feature.TextColor3 = Color3.fromRGB(0, 255, 0)
+    feature.TextSize = 20
+    feature.Font = Enum.Font.SourceSans
+    
+    -- Thống kê
+    local statsFrame = Instance.new("Frame", screenGui)
+    statsFrame.Size = UDim2.new(0, 150, 0, 150)
+    statsFrame.Position = UDim2.new(0, 10, 0, 10)
+    statsFrame.BackgroundTransparency = 1
+    
+    local fpsLabel = Instance.new("TextLabel", statsFrame)
+    fpsLabel.Name = "FPS"
+    fpsLabel.Size = UDim2.new(1, 0, 0, 20)
+    fpsLabel.Position = UDim2.new(0, 0, 0, 0)
+    fpsLabel.BackgroundTransparency = 1
+    fpsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    fpsLabel.TextSize = 14
+    
+    local timeLabel = Instance.new("TextLabel", statsFrame)
+    timeLabel.Name = "Time"
+    timeLabel.Size = UDim2.new(1, 0, 0, 20)
+    timeLabel.Position = UDim2.new(0, 0, 0, 20)
+    timeLabel.BackgroundTransparency = 1
+    timeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    timeLabel.TextSize = 14
+    
+    local killsLabel = Instance.new("TextLabel", statsFrame)
+    killsLabel.Name = "Kills"
+    killsLabel.Size = UDim2.new(1, 0, 0, 20)
+    killsLabel.Position = UDim2.new(0, 0, 0, 40)
+    killsLabel.BackgroundTransparency = 1
+    killsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    killsLabel.TextSize = 14
+    
+    local chestsLabel = Instance.new("TextLabel", statsFrame)
+    chestsLabel.Name = "Chests"
+    chestsLabel.Size = UDim2.new(1, 0, 0, 20)
+    chestsLabel.Position = UDim2.new(0, 0, 0, 60)
+    chestsLabel.BackgroundTransparency = 1
+    chestsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    chestsLabel.TextSize = 14
+    
+    local fruitsLabel = Instance.new("TextLabel", statsFrame)
+    fruitsLabel.Name = "Fruits"
+    fruitsLabel.Size = UDim2.new(1, 0, 0, 20)
+    fruitsLabel.Position = UDim2.new(0, 0, 0, 80)
+    fruitsLabel.BackgroundTransparency = 1
+    fruitsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    fruitsLabel.TextSize = 14
+    
+    -- Cập nhật UI
+    RunService.RenderStepped:Connect(function()
+        Anura.Stats.FPS = math.floor(1 / RunService.RenderStepped:Wait())
+        fpsLabel.Text = "FPS: " .. Anura.Stats.FPS
+        local elapsed = math.floor(tick() - Anura.StartTime)
+        timeLabel.Text = "Time: " .. math.floor(elapsed / 60) .. "m " .. (elapsed % 60) .. "s"
+        killsLabel.Text = "Kills: " .. Anura.Stats.Kills
+        chestsLabel.Text = "Chests: " .. Anura.Stats.ChestsCollected
+        fruitsLabel.Text = "Fruits: " .. Anura.Stats.FruitsCollected
+    end)
+end
+
+-- Module chiến đấu
+local Combat = {}
+function Combat:UseSkill(key)
+    VirtualInput:SendKeyEvent(true, key, false, game)
+    wait(Anura.Config.SkillDelay)
+    VirtualInput:SendKeyEvent(false, key, false, game)
+end
+
+function Combat:Attack()
+    VirtualUser:Button1Down(Vector2.new(0,0))
+    wait(Anura.Config.AttackDelay)
+    VirtualUser:Button1Up(Vector2.new(0,0))
+end
+
+function Combat:FullCombo()
+    self:UseSkill(Enum.KeyCode.Z) -- Melee/Fruit/Sword
+    self:UseSkill(Enum.KeyCode.X)
+    self:UseSkill(Enum.KeyCode.C)
+    self:UseSkill(Enum.KeyCode.V)
+    self:UseSkill(Enum.KeyCode.F)
+    self:Attack()
+end
+
+-- Module mục tiêu
+local Target = {}
+function Target:NextPlayer()
+    local players = Players:GetPlayers()
+    local currentTarget = Anura.TargetPlayer
+    Anura.TargetPlayer = nil
+    for i, v in pairs(players) do
+        if v ~= Players.LocalPlayer and v.Character and v.Character:FindFirstChild("HumanoidRootPart") 
+        and not table.find(Anura.Blacklist, v.Name) and Utils:Distance(Players.LocalPlayer.Character.HumanoidRootPart.Position, v.Character.HumanoidRootPart.Position) <= Anura.Config.MaxDistance then
+            if currentTarget == nil or v == players[(table.find(players, currentTarget) or 0) % #players + 1] then
+                Anura.TargetPlayer = v
+                Utils:Log("Target switched to: " .. v.Name)
+                break
+            end
+        end
+    end
+end
+
+-- Module tự động bật
+local Auto = {}
+function Auto:Toggle(feature)
+    pcall(function()
+        local player = Players.LocalPlayer
+        if feature == "Instinct" and player.PlayerGui.Main.HakiBar.Visible then
+            Combat:UseSkill(Enum.KeyCode.Q)
+            Utils:Log("Instinct activated")
+        elseif feature == "Aura" and player.PlayerGui.Main.Aura.Visible then
+            Combat:UseSkill(Enum.KeyCode.B)
+            Utils:Log("Aura activated")
+        elseif feature == "RaceV3" and player.Data.Race.Value ~= "" then
+            Combat:UseSkill(Enum.KeyCode.T)
+            Utils:Log("Race V3 activated")
+        elseif feature == "RaceV4" and player.Data.Race.Value ~= "" then
+            Combat:UseSkill(Enum.KeyCode.Y)
+            Utils:Log("Race V4 activated")
+        end
+    end)
+end
+
+function Auto:SummonSeaBeast()
+    if Players.LocalPlayer.Data.Bounty.Value >= 10000000 then
+        pcall(function()
+            ReplicatedStorage.Remotes.CommF_:InvokeServer("BuyHaki", "SeaBeast")
+            Utils:Log("Sea Beast summoned")
+        end)
+    end
+end
+
+-- Module farm phụ
+local Farm = {}
+function Farm:CollectChests()
+    for _, v in pairs(Workspace:GetChildren()) do
+        if v.Name == "Chest" and Utils:Distance(Players.LocalPlayer.Character.HumanoidRootPart.Position, v.Position) <= 20 then
+            Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(v.Position)
+            wait(0.5)
+            Anura.Stats.ChestsCollected = Anura.Stats.ChestsCollected + 1
+            Utils:Log("Chest collected")
+        end
+    end
+end
+
+function Farm:CollectFruits()
+    for _, v in pairs(Workspace:GetChildren()) do
+        if v.Name:find("Fruit") and Utils:Distance(Players.LocalPlayer.Character.HumanoidRootPart.Position, v.Position) <= 20 then
+            Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(v.Position)
+            wait(0.5)
+            Anura.Stats.FruitsCollected = Anura.Stats.FruitsCollected + 1
+            Utils:Log("Fruit collected: " .. v.Name)
+        end
+    end
+end
+
+-- Module chống ban
+local AntiBan = {}
+function AntiBan:Init()
+    Players.LocalPlayer.Idled:Connect(function()
+        VirtualUser:ClickButton2(Vector2.new())
+        Utils:Log("Anti-AFK triggered")
+    end)
+end
+
+function AntiBan:Simulate()
+    VirtualUser:CaptureController()
+    VirtualUser:SetKeyDown("0x20")
+    wait(0.1)
+    VirtualUser:SetKeyUp("0x20")
+    wait(Anura.Config.AntiBanInterval)
+    Utils:Log("Anti-ban simulation")
+end
+
+function AntiBan:CheckServer()
+    if Anura.Stats.FPS < Anura.Config.MinFPS then
+        Utils:Log("Low FPS detected, switching server")
+        ReplicatedStorage.Remotes.CommF_:InvokeServer("TravelMain")
+    end
+end
+
+-- Main loop
+spawn(function()
+    UI:Init()
+    AntiBan:Init()
+    
+    while Anura.AutoBounty do
+        pcall(function()
+            local player = Players.LocalPlayer
+            local character = player.Character or player.CharacterAdded:Wait()
+            local hrp = character:WaitForChild("HumanoidRootPart")
+            
+            -- Tự động bật
+            Auto:Toggle("Instinct")
+            Auto:Toggle("Aura")
+            Auto:Toggle("RaceV3")
+            Auto:Toggle("RaceV4")
+            Auto:SummonSeaBeast()
+            
+            -- Farm phụ
+            Farm:CollectChests()
+            Farm:CollectFruits()
+            
+            -- Chọn mục tiêu
+            if not Anura.TargetPlayer or not Anura.TargetPlayer.Character then
+                Target:NextPlayer()
+            end
+            
+            if Anura.TargetPlayer and Anura.TargetPlayer.Character then
+                local targetHrp = Anura.TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if targetHrp and Utils:Distance(hrp.Position, targetHrp.Position) <= Anura.Config.MaxDistance then
+                    hrp.CFrame = targetHrp.CFrame * CFrame.new(0, 5, -5)
+                    Combat:FullCombo()
+                    Anura.Stats.Kills = Anura.Stats.Kills + (targetHrp.Parent.Humanoid.Health <= 0 and 1 or 0)
+                end
+            end
+            
+            -- Chống ban
+            AntiBan:Simulate()
+            AntiBan:CheckServer()
+        end)
+        wait(Anura.Config.AttackDelay)
+    end
+end)
+
+-- Xử lý phím
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.N then
+        Target:NextPlayer()
+    elseif input.KeyCode == Enum.KeyCode.M then
+        hrp.CFrame = CFrame.new(Anura.Config.SafeZone)
+        Utils:Log("Teleported to Safe Zone")
+    end
+end)
