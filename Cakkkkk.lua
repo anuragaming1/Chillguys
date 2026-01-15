@@ -29,7 +29,7 @@ gui.Parent = CoreGui
 
 -- ÉP UI LUÔN Ở TRÊN CÙNG (ANTI SYSTEM UI)
 RunService:BindToRenderStep(
-	"MeowHubForceTop",
+	"meowhubui",
 	Enum.RenderPriority.Last.Value + 9999,
 	function()
 		if gui.Parent ~= CoreGui then
